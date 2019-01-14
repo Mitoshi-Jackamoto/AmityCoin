@@ -883,7 +883,7 @@ void Core::getTransactions(const std::vector<Crypto::Hash>& transactionHashes, s
   IBlockchainCache* segment = chainsLeaves[0];
   assert(segment != nullptr);
 
-  std::vector<Crypto::Hash> leftTransactions = transactionHashes;
+  std::vector<Crypto::ifHash> leftTransactions = transactionHashes;
 
   // find in main chain
   do {
@@ -1207,7 +1207,7 @@ void Core::actualizePoolTransactionsLite(const TransactionValidatorState& valida
 
     auto txState = extractSpentOutputs(tx);
 
-    if (hasIntersections(validatorState, txState) || tx.getTransactionBinaryArray().size() > getMaximumTransactionAllowedSize(blockMedianSize, currency)) {
+    if (hasIntersections(validatorState, txState) || tx.getTransactionBinaryArray().size() > getMaximumTransactionAllowedSize(blockMedianSize, currency, getTopBlockIndex())) {
       pool.removeTransaction(hash);
       notifyObservers(makeDelTransactionMessage({ hash }, Messages::DeleteTransaction::Reason::NotActual));
     }
@@ -1452,7 +1452,7 @@ bool Core::isTransactionValidForPool(const CachedTransaction& cachedTransaction,
     return false;
   }
 
-  auto maxTransactionSize = getMaximumTransactionAllowedSize(blockMedianSize, currency);
+  auto maxTransactionSize = getMaximumTransactionAllowedSize(blockMedianSize, currency, getTopBlockIndex());
   if (cachedTransaction.getTransactionBinaryArray().size() > maxTransactionSize) {
     logger(Logging::WARNING) << "Transaction " << cachedTransaction.getTransactionHash()
       << " is not valid. Reason: transaction is too big (" << cachedTransaction.getTransactionBinaryArray().size()
@@ -2389,6 +2389,10 @@ void Core::fillBlockTemplate(BlockTemplate& block, size_t medianSize, size_t max
       continue;
     }
 
+    if (transactionsSize + transactionBlobSize > maxTotalSize) {
+      continue;
+    }
+    
     if (!spentInputsChecker.haveSpentInputs(transaction.getTransaction())) {
       block.transactionHashes.emplace_back(transaction.getTransactionHash());
       transactionsSize += transactionBlobSize;
@@ -2397,7 +2401,7 @@ void Core::fillBlockTemplate(BlockTemplate& block, size_t medianSize, size_t max
   }
 
   for (const auto& cachedTransaction : poolTransactions) {
-    size_t blockSizeLimit = (cachedTransaction.getTransactionFee() == 0) ? medianSize : maxTotalSize;
+    size_t blockSizeLimit = maxTotalSize;
 
     if (blockSizeLimit < transactionsSize + cachedTransaction.getTransactionBinaryArray().size()) {
       continue;
