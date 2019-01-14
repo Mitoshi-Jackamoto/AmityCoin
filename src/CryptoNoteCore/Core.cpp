@@ -883,7 +883,7 @@ void Core::getTransactions(const std::vector<Crypto::Hash>& transactionHashes, s
   IBlockchainCache* segment = chainsLeaves[0];
   assert(segment != nullptr);
 
-  std::vector<Crypto::ifHash> leftTransactions = transactionHashes;
+  std::vector<Crypto::Hash> leftTransactions = transactionHashes;
 
   // find in main chain
   do {
