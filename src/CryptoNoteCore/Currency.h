@@ -1,7 +1,7 @@
-﻿// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
+// Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
 // Copyright (c) 2014-2018, The Monero Project
 // Copyright (c) 2018, The TurtleCoin Developers
-// 
+//
 // Please see the included LICENSE file for more information.
 
 #pragma once
@@ -30,9 +30,12 @@ public:
 
   size_t timestampCheckWindow(uint32_t blockHeight) const
   {
-      if (blockHeight >= CryptoNote::parameters::LWMA_2_DIFFICULTY_BLOCK_INDEX_V3) {
+      if (blockHeight >= CryptoNote::parameters::LWMA_2_DIFFICULTY_BLOCK_INDEX_V3)
+      {
           return CryptoNote::parameters::BLOCKCHAIN_TIMESTAMP_CHECK_WINDOW_V3;
-      } else {
+      }
+      else
+      {
           return m_timestampCheckWindow;
       }
   }
@@ -82,18 +85,19 @@ public:
       {
           return CryptoNote::parameters::DEFAULT_DUST_THRESHOLD_V2;
       }
+
       return m_defaultDustThreshold;
   }
 
   uint64_t difficultyTarget() const { return m_difficultyTarget; }
   size_t difficultyWindow() const { return m_difficultyWindow; }
-  size_t difficultyWindowByBlockVersion(uint8_t blockMajorVersion) const;
+size_t difficultyWindowByBlockVersion(uint8_t blockMajorVersion) const;
   size_t difficultyLag() const { return m_difficultyLag; }
-  size_t difficultyLagByBlockVersion(uint8_t blockMajorVersion) const;
+size_t difficultyLagByBlockVersion(uint8_t blockMajorVersion) const;
   size_t difficultyCut() const { return m_difficultyCut; }
-  size_t difficultyCutByBlockVersion(uint8_t blockMajorVersion) const;
+size_t difficultyCutByBlockVersion(uint8_t blockMajorVersion) const;
   size_t difficultyBlocksCount() const { return m_difficultyWindow + m_difficultyLag; }
-  size_t difficultyBlocksCountByBlockVersion(uint8_t blockMajorVersion, uint32_t height) const;
+size_t difficultyBlocksCountByBlockVersion(uint8_t blockMajorVersion, uint32_t height) const;
 
   size_t maxBlockSizeInitial() const { return m_maxBlockSizeInitial; }
   uint64_t maxBlockSizeGrowthSpeedNumerator() const { return m_maxBlockSizeGrowthSpeedNumerator; }
@@ -159,10 +163,12 @@ public:
 
   Currency(Currency&& currency);
 
-  size_t getApproximateMaximumInputCount(size_t transactionSize, size_t outputCount, size_t mixinCount) const;
+  static size_t getApproximateMaximumInputCount(size_t transactionSize, size_t outputCount, size_t mixinCount);
+
+  static const std::vector<uint64_t> PRETTY_AMOUNTS;
 
 private:
-  Currency(Logging::ILogger& log) : logger(log, "currency") {
+  Currency(std::shared_ptr<Logging::ILogger> log) : logger(log, "currency") {
   }
 
   bool init();
@@ -221,7 +227,6 @@ private:
   uint32_t m_upgradeHeightV4;
   uint32_t m_upgradeHeightV5;
   uint32_t m_upgradeHeightV6;
-  uint32_t m_upgradeHeightV7;
   unsigned int m_upgradeVotingThreshold;
   uint32_t m_upgradeVotingWindow;
   uint32_t m_upgradeWindow;
@@ -230,7 +235,7 @@ private:
   std::string m_blockIndexesFileName;
   std::string m_txPoolFileName;
 
-  static const std::vector<uint64_t> PRETTY_AMOUNTS;
+
 
   bool m_testnet;
   bool m_isBlockexplorer;
@@ -245,7 +250,7 @@ private:
 
 class CurrencyBuilder : boost::noncopyable {
 public:
-  CurrencyBuilder(Logging::ILogger& log);
+  CurrencyBuilder(std::shared_ptr<Logging::ILogger> log);
 
   Currency currency() {
     if (!m_currency.init()) {
@@ -307,7 +312,6 @@ public:
   CurrencyBuilder& upgradeHeightV4(uint32_t val) { m_currency.m_upgradeHeightV4 = val; return *this; }
   CurrencyBuilder& upgradeHeightV5(uint32_t val) { m_currency.m_upgradeHeightV5 = val; return *this; }
   CurrencyBuilder& upgradeHeightV6(uint32_t val) { m_currency.m_upgradeHeightV6 = val; return *this; }
-  CurrencyBuilder& upgradeHeightV7(uint32_t val) { m_currency.m_upgradeHeightV7 = val; return *this; }
   CurrencyBuilder& upgradeVotingThreshold(unsigned int val);
   CurrencyBuilder& upgradeVotingWindow(uint32_t val) { m_currency.m_upgradeVotingWindow = val; return *this; }
   CurrencyBuilder& upgradeWindow(uint32_t val);
@@ -315,7 +319,7 @@ public:
   CurrencyBuilder& blocksFileName(const std::string& val) { m_currency.m_blocksFileName = val; return *this; }
   CurrencyBuilder& blockIndexesFileName(const std::string& val) { m_currency.m_blockIndexesFileName = val; return *this; }
   CurrencyBuilder& txPoolFileName(const std::string& val) { m_currency.m_txPoolFileName = val; return *this; }
-  
+
   CurrencyBuilder& isBlockexplorer(const bool val) { m_currency.m_isBlockexplorer = val; return *this; }
   CurrencyBuilder& testnet(bool val) { m_currency.m_testnet = val; return *this; }
 
