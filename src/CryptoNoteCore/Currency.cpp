@@ -1,6 +1,7 @@
 // Copyright (c) 2012-2017, The CryptoNote developers, The Bytecoin developers
 // Copyright (c) 2014-2018, The Monero Project
 // Copyright (c) 2018, The TurtleCoin Developers
+// Copyright (c) 2018, The Calex Developers
 //
 // Please see the included LICENSE file for more information.
 
@@ -138,7 +139,7 @@ size_t Currency::difficultyBlocksCountByBlockVersion(uint8_t blockMajorVersion, 
     {
         return CryptoNote::parameters::DIFFICULTY_BLOCKS_COUNT_V3;
     }
-    if (height >= CryptoNote::parameters::LWMA_2_DIFFICULTY_BLOCK_INDEX_V4)
+    else if (height >= CryptoNote::parameters::LWMA_2_DIFFICULTY_BLOCK_INDEX_V4)
     {
         return CryptoNote::parameters::DIFFICULTY_BLOCKS_COUNT_V4;
     }
@@ -435,7 +436,11 @@ bool Currency::parseAmount(const std::string& str, uint64_t& amount) const {
 uint64_t Currency::getNextDifficulty(uint8_t version, uint32_t blockIndex, std::vector<uint64_t> timestamps, std::vector<uint64_t> cumulativeDifficulties) const
 {
     /* nextDifficultyV3 and above are defined in src/CryptoNoteCore/Difficulty.cpp */
-    if (blockIndex >= CryptoNote::parameters::LWMA_3_DIFFICULTY_BLOCK_INDEX)
+    if (blockIndex >= CryptoNote::parameters::LWMA_2_DIFFICULTY_BLOCK_INDEX_V4)
+    {
+        return nextDifficultyV7(timestamps, cumulativeDifficulties);
+    }
+    else if (blockIndex >= CryptoNote::parameters::LWMA_3_DIFFICULTY_BLOCK_INDEX)
     {
         return nextDifficultyV6(timestamps, cumulativeDifficulties);
     }
