@@ -20,12 +20,12 @@
 #include <System/EventLock.h>
 #include <System/Timer.h>
 #include <CryptoNoteCore/TransactionApi.h>
+#include <Logging/ILogger.h>
 
 #include "Common/StringTools.h"
 #include "Common/FormatTools.h"
 #include "CryptoNoteCore/CryptoNoteBasicImpl.h"
 #include "CryptoNoteCore/CryptoNoteTools.h"
-#include "CryptoNoteCore/CachedBlock.h"
 #include "Rpc/CoreRpcServerCommandsDefinitions.h"
 #include "Rpc/HttpClient.h"
 #include "Rpc/JsonRpc.h"
@@ -71,7 +71,8 @@ NodeRpcProxy::NodeRpcProxy(const std::string& nodeHost, unsigned short nodePort,
 NodeRpcProxy::~NodeRpcProxy() {
   try {
     shutdown();
-  } catch (std::exception&) {
+  } catch (std::exception& ex) {
+    m_logger(FATAL) << "Node could not shutdown properly: " << ex.what();
   }
 }
 
@@ -145,9 +146,22 @@ void NodeRpcProxy::workerThread(const INode::Callback& initialized_callback) {
       initialized_callback(std::error_code());
 
       contextGroup.spawn([this]() {
+        const uint8_t MaxRetries = 5;
         Timer pullTimer(*m_dispatcher);
+        uint8_t continiousExceptionCounter = 0;
         while (!m_stop) {
-          updateNodeStatus();
+          try {
+              updateNodeStatus();
+              continiousExceptionCounter = 0;
+          } catch(std::exception& ex) {
+            m_logger(ERROR) << "Failed to updated node status (try " << std::to_string(continiousExceptionCounter + 1)
+                            << " of " << std::to_string(MaxRetries) << "): " << ex.what();
+            if(++continiousExceptionCounter > MaxRetries)
+              throw ex;  // The endpoint failed MaxRetries times, we should break here.
+            else
+              pullTimer.sleep(std::chrono::seconds{1}); // We encountered an error, we should give the endpoint some time to
+                                                        // recover before retrying.
+          }
           if (!m_stop) {
             pullTimer.sleep(std::chrono::milliseconds(m_pullInterval));
           }
@@ -158,8 +172,8 @@ void NodeRpcProxy::workerThread(const INode::Callback& initialized_callback) {
       // Make sure all remote spawns are executed
       m_dispatcher->yield();
     }
-  } catch (std::exception&) {
-    // TODO
+  } catch (std::exception& ex) {
+    m_logger(FATAL) << "Error in node synchronization: '" << ex.what() << "\n', going to shutdown...";
   }
 
   {
@@ -178,7 +192,7 @@ void NodeRpcProxy::workerThread(const INode::Callback& initialized_callback) {
 
 void NodeRpcProxy::updateNodeStatus() {
   bool updateBlockchain = true;
-  while (updateBlockchain) {
+  while (updateBlockchain && !m_stop) {
     updateBlockchainStatus();
     updateBlockchain = !updatePoolStatus();
   }
@@ -246,7 +260,6 @@ void NodeRpcProxy::updateBlockchainStatus() {
 
   ec = jsonCommand("/getinfo", getInfoReq, getInfoResp);
   if (!ec) {
-    m_lastInfoResponse = getInfoResp;
     //a quirk to let wallets work with previous versions daemons.
     //Previous daemons didn't have the 'last_known_block_index' parameter in RPC so it may have zero value.
     std::unique_lock<std::mutex> lock(m_mutex);
@@ -299,11 +312,6 @@ void NodeRpcProxy::getFeeInfo() {
   m_fee_amount = iresp.amount;
 
   return;
-}
-
-std::optional<COMMAND_RPC_GET_INFO::response> NodeRpcProxy::getLastInfoResponse() const
-{
-    return m_lastInfoResponse;
 }
 
 bool NodeRpcProxy::ping()
@@ -540,27 +548,6 @@ void NodeRpcProxy::getBlock(const uint32_t blockHeight, BlockDetails &block, con
   scheduleRequest(std::bind(&NodeRpcProxy::doGetBlock, this, blockHeight, std::ref(block)), callback);
 }
 
-void NodeRpcProxy::getMiningParameters(const std::string &miningAddress, BlockTemplate &blockTemplate, uint64_t &difficulty, const INode::Callback &callback)
-{
-  std::lock_guard<std::mutex> lock(m_mutex);
-  if(m_state != STATE_INITIALIZED) {
-    callback(make_error_code(error::NOT_INITIALIZED));
-  } else {
-    scheduleRequest(std::bind(&NodeRpcProxy::doGetMiningParameters,this, std::cref(miningAddress),
-                              std::ref(blockTemplate), std::ref(difficulty)), callback);
-  }
-}
-
-void NodeRpcProxy::submitBlock(const BlockTemplate &block, const INode::Callback &callback)
-{
-  std::lock_guard<std::mutex> lock(m_mutex);
-  if(m_state != STATE_INITIALIZED) {
-      callback(make_error_code(error::NOT_INITIALIZED));
-  } else {
-    scheduleRequest(std::bind(&NodeRpcProxy::doSubmitBlock,this, std::cref(block)), callback);
-  }
-}
-
 void NodeRpcProxy::getTransactions(const std::vector<Crypto::Hash>& transactionHashes, std::vector<TransactionDetails>& transactions, const Callback& callback) {
   std::lock_guard<std::mutex> lock(m_mutex);
   if (m_state != STATE_INITIALIZED) {
@@ -776,58 +763,6 @@ std::error_code NodeRpcProxy::doGetBlock(const uint32_t blockHeight, BlockDetail
   block = std::move(resp.block);
 
   return ec;
-}
-
-std::error_code NodeRpcProxy::doGetMiningParameters(const std::string &miningAddress, BlockTemplate &blockTemplate, uint64_t &difficulty)
-{
-  COMMAND_RPC_GETBLOCKTEMPLATE::request req = AUTO_VAL_INIT(req);
-  COMMAND_RPC_GETBLOCKTEMPLATE::response res = AUTO_VAL_INIT(res);
-
-  req.wallet_address = miningAddress;
-
-  if(m_httpEvent == nullptr || m_httpClient == nullptr)
-    return make_error_code(error::INTERNAL_NODE_ERROR);
-  try {
-    System::EventLock lk(*m_httpEvent);
-    JsonRpc::invokeJsonRpcCommand(*m_httpClient, "getblocktemplate", req, res);
-  } catch (...) {
-    return make_error_code(error::REQUEST_ERROR);
-  }
-  if(res.status != CORE_RPC_STATUS_OK) {
-    return make_error_code(error::REQUEST_ERROR);
-  }
-
-  std::vector<uint8_t> blockTemplateData;
-  if(!Common::fromHex(res.blocktemplate_blob, blockTemplateData))
-    return make_error_code(error::PARSING_ERROR);
-  if(!fromBinaryArray(blockTemplate, blockTemplateData)) {
-    return make_error_code(error::PARSING_ERROR);
-  }
-  difficulty =  res.difficulty;
-  return std::error_code{};
-}
-
-std::error_code NodeRpcProxy::doSubmitBlock(const BlockTemplate &block)
-{
-  CachedBlock cachedBlock(block);
-
-  if(m_httpEvent == nullptr || m_httpClient == nullptr)
-    return make_error_code(error::INTERNAL_NODE_ERROR);
-
-  COMMAND_RPC_SUBMITBLOCK::request req;
-  COMMAND_RPC_SUBMITBLOCK::response res;
-  std::vector<uint8_t> rawData;
-  if(!toBinaryArray(block, rawData))
-    return make_error_code(error::PARSING_ERROR);
-  req.emplace_back(Common::toHex(rawData));
-
-  try {
-    System::EventLock lk(*m_httpEvent);
-    JsonRpc::invokeJsonRpcCommand(*m_httpClient, "submitblock", req, res);
-  } catch (...) {
-    return make_error_code(error::REQUEST_ERROR);
-  }
-  return std::error_code{};
 }
 
 std::error_code NodeRpcProxy::doGetTransactionHashesByPaymentId(const Crypto::Hash& paymentId, std::vector<Crypto::Hash>& transactionHashes) {
